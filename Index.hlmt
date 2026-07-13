@@ -1,136 +1,87 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trang Web Của Tôi</title>
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
-</head>
-<body>
-    <header>
-        <nav>
-            <div class="logo">MyBrand</div>
-            <ul>
-                <li><a href="#">Trang chủ</a></li>
-                <li><a href="#">Dịch vụ</a></li>
-                <li><a href="#">Liên hệ</a></li>
-            </ul>
-        </nav>
-    </header>
-
-    <main>
-        <section class="hero">
-            <h1>Chào mừng đến với dự án mới</h1>
-            <p>Nơi biến những ý tưởng sáng tạo thành hiện thực.</p>
-            <a href="#" class="btn">Khám phá ngay</a>
-        </section>
-    </main>
-
-    <footer>
-        <p>&copy; 2026 - Thiết kế bởi AI Collaborator</p>
-    </footer>
-</body>
-</html>
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    font-family: 'Roboto', sans-serif;
-    line-height: 1.6;
-    color: #333;
-    background-color: #f4f4f4;
-}
-
-header {
-    background: #2c3e50;
-    color: #fff;
-    padding: 1rem 0;
-    position: fixed;
-    width: 100%;
-    top: 0;
-    z-index: 1000;
-}
-
-nav {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 0 20px;
-}
-
-nav ul {
-    display: flex;
-    list-style: none;
-}
-
-nav ul li a {
-    color: #fff;
-    text-decoration: none;
-    padding: 0 15px;
-    transition: color 0.3s;
-}
-
-nav ul li a:hover {
-    color: #3498db;
-}
-
-.hero {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), 
-                url('https://images.unsplash.com/photo-1497215728101-856f4ea42174') no-repeat center center/cover;
-    color: #fff;
-    padding: 0 20px;
-}
-
-.hero h1 {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-}
-
-.btn {
-    display: inline-block;
-    background: #3498db;
-    color: #fff;
-    padding: 10px 30px;
-    text-decoration: none;
-    border-radius: 5px;
-    margin-top: 20px;
-    transition: background 0.3s;
-}
-
-.btn:hover {
-    background: #2980b9;
-}
-
-footer {
-    text-align: center;
-    padding: 2rem;
-    background: #333;
-    color: #fff;
-}
-async function hoiAI(cauHoi) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer YOUR_API_KEY'
-        },
-        body: JSON.stringify({
-            model: "gpt-3.5-turbo",
-            messages: [{role: "user", content: cauHoi}]
-        })
-    });
-    const data = await response.json();
-    console.log("AI trả lời: ", data.choices[0].message.content);
-  }
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import threading
+import time
+class AutoUploaderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Tool Tự Động Làm Video (Douyin -> Social)")
+        self.root.geometry("600x400")
+        
+        # Tiêu đề
+        ttk.Label(root, text="HỆ THỐNG LÀM VIDEO TỰ ĐỘNG", font=("Arial", 16, "bold")).pack(pady=10)
+        
+        # Khung 1: Tạo nguyên liệu
+        frame1 = ttk.LabelFrame(root, text="Bước 1: Tạo nguyên liệu (Dịch & Lấy Giọng)")
+        frame1.pack(padx=20, pady=10, fill="x")
+        
+        ttk.Label(frame1, text="Link Video Douyin (hoặc kịch bản gốc):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.entry_link = ttk.Entry(frame1, width=50)
+        self.entry_link.grid(row=0, column=1, padx=5, pady=5)
+        
+        self.btn_generate = ttk.Button(frame1, text="Bắt đầu Lấy Text & Tải Audio", command=self.generate_materials)
+        self.btn_generate.grid(row=1, column=0, columnspan=2, pady=10)
+        
+        # Khung 2: Nhắc nhở Edit
+        frame_edit = ttk.Frame(root)
+        frame_edit.pack(padx=20, pady=5, fill="x")
+        ttk.Label(frame_edit, text=">> BƯỚC 2: BẠN MỞ CAPCUT ĐỂ EDIT VIDEO BẰNG NGUYÊN LIỆU VỪA TẠO <<", foreground="red", font=("Arial", 10, "italic")).pack()
+        # Khung 3: Đăng video
+        frame2 = ttk.LabelFrame(root, text="Bước 3: Đăng Video Tự Động")
+        frame2.pack(padx=20, pady=10, fill="x")
+        
+        self.btn_select_video = ttk.Button(frame2, text="Chọn Video Đã Edit Xong", command=self.select_video)
+        self.btn_select_video.grid(row=0, column=0, padx=5, pady=5)
+        
+        self.lbl_video_path = ttk.Label(frame2, text="Chưa chọn video...")
+        self.lbl_video_path.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        self.btn_upload = ttk.Button(frame2, text="Tự Động Đăng (TikTok, FB, YT)", command=self.upload_video)
+        self.btn_upload.grid(row=1, column=0, columnspan=2, pady=10)
+        
+        # Log trạng thái
+        self.status_var = tk.StringVar()
+        self.status_var.set("Sẵn sàng...")
+        self.lbl_status = ttk.Label(root, textvariable=self.status_var, font=("Arial", 10))
+        self.lbl_status.pack(pady=10)
+    def select_video(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4 *.mov *.avi")])
+        if file_path:
+            self.lbl_video_path.config(text=file_path)
+            
+    def generate_materials(self):
+        link = self.entry_link.get()
+        if not link:
+            messagebox.showwarning("Cảnh báo", "Vui lòng nhập link Douyin hoặc kịch bản!")
+            return
+        
+        self.btn_generate.config(state="disabled")
+        self.status_var.set("Đang chạy bot tạo tài nguyên (Gemini + VIP TTS)...")
+        
+        # Chạy trong thread riêng để không đơ giao diện
+        threading.Thread(target=self._mock_generate_task).start()
+    def _mock_generate_task(self):
+        # Đây là nơi chúng ta sẽ gọi code tự động hóa thực sự
+        time.sleep(3) # Giả lập chờ 3 giây
+        self.status_var.set("Hoàn thành! Đã lưu kịch bản và audio vào thư mục.")
+        self.btn_generate.config(state="normal")
+        messagebox.showinfo("Thành công", "Đã tải xong Voice và Kịch bản. Vui lòng vào CapCut để Edit!")
+    def upload_video(self):
+        video_path = self.lbl_video_path.cget("text")
+        if "Chưa chọn video" in video_path:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn video đã edit xong!")
+            return
+            
+        self.btn_upload.config(state="disabled")
+        self.status_var.set("Đang chạy bot đăng video...")
+        threading.Thread(target=self._mock_upload_task).start()
+    def _mock_upload_task(self):
+        # Nơi gọi code Playwright để đăng bài
+        time.sleep(3)
+        self.status_var.set("Hoàn thành đăng bài!")
+        self.btn_upload.config(state="normal")
+        messagebox.showinfo("Thành công", "Đã đăng lịch lên TikTok, FB và YouTube!")
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AutoUploaderApp(root)
+    root.mainloop()
