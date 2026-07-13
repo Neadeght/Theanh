@@ -1,198 +1,87 @@
-# @title 🚀 KHỞI TẠO WEBSITE CLONE GIỌNG NÓI AI (PHIÊN BẢN ỔN ĐỊNH V3)
-# Bấm nút Play và đợi khoảng 3-5 phút để hệ thống cài đặt.
-
-import os
-import torch
-from IPython.display import clear_output
-import locale
-
-# --- CẤU HÌNH HỆ THỐNG ---
-print("⏳ Đang cài đặt các thư viện cần thiết (FFmpeg, Coqui TTS, Gradio)...")
-# Fix lỗi encoding trên Colab
-locale.getpreferredencoding = lambda: "UTF-8"
-
-# Tự động đồng ý điều khoản
-os.environ["COQUI_TOS_AGREED"] = "1"
-
-# Cài đặt FFmpeg để xử lý âm thanh mạnh mẽ
-!apt-get install -y ffmpeg > /dev/null
-
-# Cài đặt các thư viện Python (Sử dụng phiên bản ổn định nhất)
-!pip install -q coqui-tts==0.22.0 gradio==4.19.2 pydub typing-extensions>=4.8.0 nltk
-
-clear_output()
-print("✅ Cài đặt thư viện hoàn tất! Đang tải mô hình AI...")
-
-# --- TẢI MÔ HÌNH AI ---
-from TTS.api import TTS
-from pydub import AudioSegment
-import gradio as gr
-import nltk
-nltk.download('punkt') # Cần cho việc tách câu
-
-# Kiểm tra GPU
-device = "cuda" if torch.cuda.is_available() else "cpu"
-if device == "cpu":
-    print("\n⚠️ CẢNH BÁO NGHIÊM TRỌNG: BẠN CHƯA BẬT GPU T4.")
-    print("Vui lòng vào 'Thời gian chạy' -> 'Đổi loại' -> Chọn 'T4 GPU'. Nếu không sẽ rất chậm hoặc lỗi.\n")
-
-# Tải model XTTS v2 (Hỗ trợ tiếng Việt tốt nhất hiện nay)
-print("⏳ Đang tải model XTTS v2 về GPU (Lần đầu mất khoảng 1 phút)...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-print("✅ Đã tải xong mô hình! Sẵn sàng hoạt động.")
-
-# --- CÁC HÀM XỬ LÝ CỐT LÕI (CHỐNG LỖI) ---
-
-def sanitize_audio(audio_path):
-    """
-    Hàm này là 'Bộ lọc': Tự động chuyển mọi file âm thanh đầu vào 
-    về chuẩn WAV Mono 22050Hz để AI không bao giờ bị lỗi.
-    """
-    try:
-        print(f"🔄 Đang chuẩn hóa file âm thanh: {os.path.basename(audio_path)}")
-        sound = AudioSegment.from_file(audio_path)
-        # Chuyển về 1 kênh (mono) và tần số 22050Hz
-        sound = sound.set_channels(1).set_frame_rate(22050)
-        cleaned_path = "temp_reference_cleaned.wav"
-        sound.export(cleaned_path, format="wav")
-        return cleaned_path
-    except Exception as e:
-        raise Exception(f"Lỗi khi xử lý file giọng mẫu. Hãy đảm bảo file không bị hỏng. Chi tiết: {e}")
-
-def split_text_smart(text):
-    """Cắt văn bản dài thành các câu ngắn để tránh tràn bộ nhớ"""
-    sentences = nltk.sent_tokenize(text)
-    chunks = []
-    current_chunk = ""
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) < 250: # Giới hạn khoảng 250 ký tự mỗi lần đọc
-            current_chunk += sentence + " "
-        else:
-            chunks.append(current_chunk.strip())
-            current_chunk = sentence + " "
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    return chunks
-
-def generate_voice_safe(text, audio_ref, speed):
-    """Hàm tạo giọng chính với cơ chế bắt lỗi và xử lý văn bản dài"""
-    if not text or text.strip() == "":
-        return None, "❌ Lỗi: Vui lòng nhập văn bản cần đọc!"
-    if not audio_ref:
-        return None, "❌ Lỗi: Vui lòng tải lên file giọng mẫu!"
-
-    status_log = "🚀 Bắt đầu tiến trình...\n"
-    final_output_path = "final_output.wav"
-    combined_audio = AudioSegment.empty()
-    temp_files = []
-
-    try:
-        # BƯỚC 1: Chuẩn hóa file giọng mẫu
-        clean_ref = sanitize_audio(audio_ref)
-        status_log += "✅ Đã chuẩn hóa file giọng mẫu thành công.\n"
-
-        # BƯỚC 2: Cắt văn bản dài
-        chunks = split_text_smart(text)
-        status_log +=(f"ℹ️ Văn bản được chia thành {len(chunks)} đoạn nhỏ để xử lý an toàn.\n")
-
-        # BƯỚC 3: Đọc từng đoạn
-        for i, chunk in enumerate(chunks):
-            print(f"Processing chunk {i+1}/{len(chunks)}...")
-            temp_path = f"temp_chunk_{i}.wav"
-            
-            # Gọi AI để đọc (QUAN TRỌNG: split_sentences=False vì ta đã tự cắt rồi)
-            tts.tts_to_file(
-                text=chunk,
-                file_path=temp_path,
-                speaker_wav=clean_ref,
-                language="vi", 
-                split_sentences=False,
-                speed=speed
-            )
-            
-            # Ghép đoạn vừa đọc vào file tổng
-            segment = AudioSegment.from_wav(temp_path)
-            combined_audio += segment
-            # Thêm khoảng nghỉ ngắn (300ms) giữa các câu cho tự nhiên
-            combined_audio += AudioSegment.silent(duration=300)
-            temp_files.append(temp_path)
-            
-            # Giải phóng bộ nhớ GPU sau mỗi đoạn
-            torch.cuda.empty_cache()
-
-        # BƯỚC 4: Xuất file cuối cùng
-        combined_audio.export(final_output_path, format="wav")
-        status_log += "✅ Hoàn tất! File âm thanh đã sẵn sàng bên dưới."
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import threading
+import time
+class AutoUploaderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Tool Tự Động Làm Video (Douyin -> Social)")
+        self.root.geometry("600x400")
         
-        # Dọn dẹp file rác
-        for f in temp_files: 
-            if os.path.exists(f): os.remove(f)
+        # Tiêu đề
+        ttk.Label(root, text="HỆ THỐNG LÀM VIDEO TỰ ĐỘNG", font=("Arial", 16, "bold")).pack(pady=10)
+        
+        # Khung 1: Tạo nguyên liệu
+        frame1 = ttk.LabelFrame(root, text="Bước 1: Tạo nguyên liệu (Dịch & Lấy Giọng)")
+        frame1.pack(padx=20, pady=10, fill="x")
+        
+        ttk.Label(frame1, text="Link Video Douyin (hoặc kịch bản gốc):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.entry_link = ttk.Entry(frame1, width=50)
+        self.entry_link.grid(row=0, column=1, padx=5, pady=5)
+        
+        self.btn_generate = ttk.Button(frame1, text="Bắt đầu Lấy Text & Tải Audio", command=self.generate_materials)
+        self.btn_generate.grid(row=1, column=0, columnspan=2, pady=10)
+        
+        # Khung 2: Nhắc nhở Edit
+        frame_edit = ttk.Frame(root)
+        frame_edit.pack(padx=20, pady=5, fill="x")
+        ttk.Label(frame_edit, text=">> BƯỚC 2: BẠN MỞ CAPCUT ĐỂ EDIT VIDEO BẰNG NGUYÊN LIỆU VỪA TẠO <<", foreground="red", font=("Arial", 10, "italic")).pack()
+        # Khung 3: Đăng video
+        frame2 = ttk.LabelFrame(root, text="Bước 3: Đăng Video Tự Động")
+        frame2.pack(padx=20, pady=10, fill="x")
+        
+        self.btn_select_video = ttk.Button(frame2, text="Chọn Video Đã Edit Xong", command=self.select_video)
+        self.btn_select_video.grid(row=0, column=0, padx=5, pady=5)
+        
+        self.lbl_video_path = ttk.Label(frame2, text="Chưa chọn video...")
+        self.lbl_video_path.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        self.btn_upload = ttk.Button(frame2, text="Tự Động Đăng (TikTok, FB, YT)", command=self.upload_video)
+        self.btn_upload.grid(row=1, column=0, columnspan=2, pady=10)
+        
+        # Log trạng thái
+        self.status_var = tk.StringVar()
+        self.status_var.set("Sẵn sàng...")
+        self.lbl_status = ttk.Label(root, textvariable=self.status_var, font=("Arial", 10))
+        self.lbl_status.pack(pady=10)
+    def select_video(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4 *.mov *.avi")])
+        if file_path:
+            self.lbl_video_path.config(text=file_path)
             
-        return final_output_path, status_log
-
-    except Exception as e:
-        error_message = str(e)
-        if "CUDA out of memory" in error_message:
-            return None, "❌ LỖI TRÀN BỘ NHỚ GPU. Hãy thử lại với văn bản ngắn hơn một chút."
-        return None, f"❌ ĐÃ XẢY RA LỖI KỸ THUẬT:\n{error_message}\n(Hãy thử đổi file giọng mẫu khác ngắn hơn)"
-
-
-# --- GIAO DIỆN NGƯỜI DÙNG (GRADIO) ---
-# Tạo giao diện giống trang web mẫu
-custom_css = """
-.gradio-container {font-family: 'Roboto', sans-serif;}
-#run-btn {background-color: #2563eb !important; color: white !important; font-weight: bold; font-size: 16px;}
-"""
-
-with gr.Blocks(title="Dự Án Tạo Giọng Nói AI", theme=gr.themes.Soft(), css=custom_css) as demo:
-    gr.Markdown("# 🎙️ DỰ ÁN ÂM THANH AI (CLONE GIỌNG NÓI)")
-    gr.Markdown("Công cụ chuyển văn bản thành giọng nói tiếng Việt, sử dụng giọng mẫu bất kỳ.")
-    
-    with gr.Row():
-        # Cột bên trái: Cấu hình
-        with gr.Column(scale=1):
-            gr.Markdown("### 1. Cấu hình Giọng nói")
-            inp_audio = gr.Audio(
-                label="Tải lên file giọng mẫu (MP3/WAV)", 
-                type="filepath",
-                sources=["upload", "microphone"]
-            )
-            gr.Markdown("ℹ️ *Mẹo: Chọn file rõ tiếng, không nhạc nền, khoảng 10-30 giây là tốt nhất.*")
+    def generate_materials(self):
+        link = self.entry_link.get()
+        if not link:
+            messagebox.showwarning("Cảnh báo", "Vui lòng nhập link Douyin hoặc kịch bản!")
+            return
+        
+        self.btn_generate.config(state="disabled")
+        self.status_var.set("Đang chạy bot tạo tài nguyên (Gemini + VIP TTS)...")
+        
+        # Chạy trong thread riêng để không đơ giao diện
+        threading.Thread(target=self._mock_generate_task).start()
+    def _mock_generate_task(self):
+        # Đây là nơi chúng ta sẽ gọi code tự động hóa thực sự
+        time.sleep(3) # Giả lập chờ 3 giây
+        self.status_var.set("Hoàn thành! Đã lưu kịch bản và audio vào thư mục.")
+        self.btn_generate.config(state="normal")
+        messagebox.showinfo("Thành công", "Đã tải xong Voice và Kịch bản. Vui lòng vào CapCut để Edit!")
+    def upload_video(self):
+        video_path = self.lbl_video_path.cget("text")
+        if "Chưa chọn video" in video_path:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn video đã edit xong!")
+            return
             
-            inp_speed = gr.Slider(
-                label="Tốc độ đọc", 
-                minimum=0.75, maximum=1.5, value=1.0, step=0.05,
-                info="1.0 là bình thường. < 1 là chậm, > 1 là nhanh."
-            )
-
-        # Cột ở giữa: Văn bản
-        with gr.Column(scale=2):
-            gr.Markdown("### 2. Nội dung Văn bản")
-            inp_text = gr.Textbox(
-                label="Nhập văn bản Tiếng Việt tại đây", 
-                lines=12, 
-                placeholder="Ví dụ: Xin chào, đây là giọng nói AI được tạo ra từ giọng mẫu của bạn. Công nghệ này cho phép đọc các đoạn văn bản dài một cách tự nhiên...",
-                elem_id="input-text"
-            )
-            btn_run = gr.Button("🚀 TẠO ÂM THANH NGAY", elem_id="run-btn")
-
-        # Cột bên phải: Kết quả
-        with gr.Column(scale=1):
-             gr.Markdown("### 3. Kết quả")
-             out_status = gr.Textbox(label="Nhật ký xử lý", lines=6, interactive=False)
-             out_audio = gr.Audio(label="Nghe và Tải về", type="filepath", interactive=False)
-
-    # Kết nối sự kiện bấm nút
-    btn_run.click(
-        fn=generate_voice_safe, 
-        inputs=[inp_text, inp_audio, inp_speed], 
-        outputs=[out_audio, out_status]
-    )
-
-# Chạy server
-print("\n" + "="*50)
-print("🌍 ĐANG KHỞI TẠO WEB SERVER...")
-print("Vui lòng đợi khoảng 1-2 phút cho đến khi đường link hiện ra.")
-print("="*50)
-# Sử dụng queue để xử lý các yêu cầu dài mà không bị timeout
-demo.queue(max_size=5).launch(share=True, debug=True, show_error=True)
+        self.btn_upload.config(state="disabled")
+        self.status_var.set("Đang chạy bot đăng video...")
+        threading.Thread(target=self._mock_upload_task).start()
+    def _mock_upload_task(self):
+        # Nơi gọi code Playwright để đăng bài
+        time.sleep(3)
+        self.status_var.set("Hoàn thành đăng bài!")
+        self.btn_upload.config(state="normal")
+        messagebox.showinfo("Thành công", "Đã đăng lịch lên TikTok, FB và YouTube!")
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AutoUploaderApp(root)
+    root.mainloop()
